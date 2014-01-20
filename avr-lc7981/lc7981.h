@@ -16,26 +16,25 @@
 #ifndef _LC7981_H
 #define _LC7981_H
 
-/* AVR clock speed */
-#define F_CPU	8000000
-
 #include <avr/io.h>
 #include <util/delay.h>
 
 /* Hardware setup */
-#define LCD_DATA_DDR	DDRA
-#define LCD_DATA_PORT	PORTA
-#define LCD_DATA_PIN	PINA
+#define LCD_DATA_DDR	DDRD
+#define LCD_DATA_PORT	PORTD
+#define LCD_DATA_PIN	PIND
 
 #define LCD_CTRL_DDR	DDRB
 #define LCD_CTRL_PORT	PORTB
 
-#define LCD_CTRL_RS	1
-#define LCD_CTRL_RW	2
-#define LCD_CTRL_E	4
+#define LCD_CTRL_RS	2
+#define LCD_CTRL_RW	1
+#define LCD_CTRL_E	0
 
 #define LCD_WIDTH	160
 #define LCD_HEIGHT	80
+
+#define LCD_RAM_SIZE	4096
 
 /* Convenient macros to toggle RS, RW, and E control pins */
 #define lcd_rs_high() (LCD_CTRL_PORT |= (1<<LCD_CTRL_RS))
@@ -95,5 +94,6 @@ void lcd_graphics_move(unsigned short x, unsigned short y);
 void lcd_graphics_draw_byte(unsigned char data);
 void lcd_graphics_plot_byte(unsigned short x, unsigned short y, unsigned char data);
 void lcd_graphics_plot_pixel(unsigned short x, unsigned short y, unsigned char state);
+void lcd_scroll_screen (unsigned char lines);
 
 #endif

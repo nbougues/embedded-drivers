@@ -78,7 +78,7 @@ void g_draw_char(unsigned short x, unsigned short y, char character) {
 		for (j = 0; j < FONT_HEIGHT; j++) {
 			/* Check if the bit/pixel is set, paint accoringly to 
  			 * the screen */
-			if (Font5x7[FONT_WIDTH*fontIndex+i] & (1<<j))
+			if (pgm_read_byte(&(Font5x7[FONT_WIDTH*fontIndex+i])) & (1<<j))
 				lcd_graphics_plot_pixel(x, y+j, PIXEL_ON);
 			else	
 				lcd_graphics_plot_pixel(x, y+j, PIXEL_OFF);
@@ -130,6 +130,38 @@ void g_draw_string(unsigned short x, unsigned short y, const char *str) {
 			x = origin_X;
 			/* Move y one character down */
 			y += FONT_HEIGHT+1;
+		}
+	}
+}
+
+/**
+  * Draws an XBM bitmap at specified location
+  * 
+  * Beware : this function is only meant to load an XBM at an X position
+  * which is a multiple of 8 because it's simpler/faster to load 8 bits at a 
+  * time on the display, but it can only be done on 8 pixels boundaries.
+  * @param x The x coordinate of the XBM origin; must be a multiple of 8
+  * @param y The y coordinate of the XBM origin
+  * @param size_x The width of the XBM, usually taken from the XBM defines
+  * @param size_y The height of the XBM, usually taken from the XBM defines
+  * @param bits The bits array of the XBM, usually taken from the XBM defines
+  */
+void g_draw_xbm(unsigned short x, unsigned short y, 
+	unsigned short size_x, unsigned short size_y, const unsigned char *bits)
+{
+	unsigned short i,j;
+	unsigned char c;
+	unsigned char p=0;
+
+	for (i = 0; i < size_y; i++) {
+		/* Move to the start of the i-th line */	
+		lcd_graphics_move(x,y+i);
+		for (j = 0; j < (size_x+8-1)/8; j++) {
+			/* Load the data. Note that the LC7981 auto-increments 
+			 * it's current drawing position after drawing a byte */
+			c = pgm_read_byte(&bits[p]);
+			lcd_graphics_draw_byte(c);
+			p++;
 		}
 	}
 }

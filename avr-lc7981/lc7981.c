@@ -7,14 +7,19 @@
  *
  * February 16, 2007                                                       
  *
+ * Modified 01/2014 by Nicolas Bougues <nicolas@bougues.net>
+ *
 ***************************************************************************/
 
 /* lc7981.c: Source code for the LC7981/HD61830 graphics lcd driver.
  * The hardware port defines can be found in lc7981.h. */
 
 #include "lc7981.h"
+#ifndef LC7981_DRIVER_ONLY
 #include "graphics.h"
 #include "draw_penguin.c"
+#include "uparrow.xbm"
+#endif
 
 /** 
  * Strobes the Enable control line to trigger the lcd to process the
@@ -28,38 +33,58 @@ void lcd_strobe_enable(void) {
 }
 
 /**
+ * Older implementation : just wait
+ *
  * Waits for the busy flag to clear, which should take
  * around the maximum time for an instruction to complete.
  * Note, LCD operation is kind of sensitive to this configuration. If the delay
  * is too fast, the LCD will miss some pixels when it is really put through
  * a stress test. This dela time seems to work great.
  */
-void lcd_wait_busy(void) {
-	_delay_us(3);
-}
+/*void lcd_wait_busy(void) {
+	_delay_us(4);
+}*/
 
 /**
- * Older implementation of lcd_wait_busy() that checked the busy flag in 
- * hardware. I found that it always hanged after plotting a byte to the screen,
- * so I took up the delay version above.
+ * For board layout reasons, I had to revert all the data lines on the
+ * PCB (D0 -> D7, D1 -> D6... D7 -> D0), so I "correct" it in software
+ */
+#ifdef LC7981_REVERSED_DATA_PORT
+unsigned char reverse(unsigned char b) {
+   b = (b & 0xF0) >> 4 | (b & 0x0F) << 4;
+   b = (b & 0xCC) >> 2 | (b & 0x33) << 2;
+   b = (b & 0xAA) >> 1 | (b & 0x55) << 1;
+   return b;
+}
+#else
+#define reverse(a) a
+#endif
+
+/**
+ * Nicer implementation
  *
+ * Wait for the busy flag to clear
+ */
 void lcd_wait_busy(void) {
-	unsigned char counter = 1;
 	unsigned char data;
-	* Set RW and RS high *
+	/*Set RW and RS high */
 	lcd_rw_high();
 	lcd_rs_high();
 	__asm("nop;"); __asm("nop;"); __asm("nop;");
-	* Wait until busy flag on last bit of the data port clears. *
+
+	/* Wait until busy flag on last bit of the data port clears. */
+
+	/* Switch the data port to input */
+	LCD_DATA_DDR = 0;
+	lcd_enable_high();
 	do {
-		lcd_enable_high();
-		__asm("nop;"); __asm("nop;"); __asm("nop;");
-		data = LCD_DATA_PORT;
-		__asm("nop;"); __asm("nop;"); __asm("nop;");
-		lcd_enable_low();
-		__asm("nop;"); __asm("nop;"); __asm("nop;");
-	} while (data & 0x80);
-}*/
+		data = LCD_DATA_PIN;
+	} while (data & reverse(0x80));
+	lcd_enable_low();
+
+	/* Switch the data port to output */
+	LCD_DATA_DDR = 0xFF;
+}
 
 /**
  * Writes a raw instruction to the LCD. 
@@ -75,22 +100,52 @@ void lcd_write_command(unsigned char command, unsigned char data) {
 	lcd_rs_high();
 	/* Instruction commands are a maximum of 4 bits long, so 
 	 * just mask off the rest. */
-	LCD_DATA_PORT = (command&0x0F);
-	__asm("nop;"); __asm("nop;"); __asm("nop;");
+	LCD_DATA_PORT = reverse((command&0x0F));
 	__asm("nop;"); __asm("nop;"); __asm("nop;");
 	lcd_strobe_enable();
-	__asm("nop;"); __asm("nop;"); __asm("nop;");
 	__asm("nop;"); __asm("nop;"); __asm("nop;");
 
 	/* Set RW low, RW low to write the instruction data */
 	lcd_rw_low();
 	lcd_rs_low();
-	LCD_DATA_PORT = data;
+	LCD_DATA_PORT = reverse(data);
 	__asm("nop;"); __asm("nop;"); __asm("nop;");
+	lcd_strobe_enable();
+}
+
+/**
+ * Reads a byte from the LCD
+ * @param data A pointer to a char receiving the read byte
+ */
+void lcd_read_data(unsigned char *data) {
+	/* Wait for the busy flag to clear */
+	lcd_wait_busy();
+	
+	/* Set RW low, RS high to write the instruction command */
+	lcd_rw_low();
+	lcd_rs_high();
+	/* Instruction commands are a maximum of 4 bits long, so 
+	 * just mask off the rest. */
+	LCD_DATA_PORT = reverse(LCD_CMD_READ_DATA);
 	__asm("nop;"); __asm("nop;"); __asm("nop;");
 	lcd_strobe_enable();
 	__asm("nop;"); __asm("nop;"); __asm("nop;");
+
+	/* Switch the data port to input */
+	LCD_DATA_DDR = 0;
+
+	/* Set RW low, RS low to read the data */
+	lcd_rw_high();
+	lcd_rs_low();
+	lcd_enable_high();
 	__asm("nop;"); __asm("nop;"); __asm("nop;");
+
+	/* Read the data */
+	*data = reverse(LCD_DATA_PIN);
+	lcd_enable_low();
+
+	/* Switch the data port back to output */
+	LCD_DATA_DDR = 0xFF;
 }
 
 /**
@@ -209,26 +264,61 @@ void lcd_graphics_clear(void) {
 }
 
 /**
- * Delay in milliseconds.
- * An extension of _delay_ms() so we can delay for longer periods of time.
- * @param ms Milliseconds to delay.
+ * Scrolls the LCD upwards
+ * @param lines The number of lines to scroll upwards
  */
-void delay_ms_long(unsigned short ms) {
-	for (; ms > 0; ms--)
-		_delay_ms(1);
+void lcd_scroll_screen (unsigned char lines)
+{
+	unsigned char i,j;
+	unsigned char data[LCD_WIDTH/8];
+
+	for (i = lines; i < LCD_HEIGHT - lines; i++) {
+
+		/* Move to start of line */
+		lcd_graphics_move (0, i);
+
+		lcd_read_data(data);
+
+		/* Read one line */
+		for (j=0; j < LCD_WIDTH/8; j++) {
+			lcd_read_data(&data[j]);
+		}
+
+		/* Move to start of line n lines up */
+		lcd_graphics_move (0, i-lines);
+
+		/* Write one line */
+		for (j=0; j < LCD_WIDTH/8; j++) {
+			lcd_write_command(LCD_CMD_WRITE_DATA, data[j]);
+		}
+
+	}
+
+	/* Clear the bottom of the screen */
+	for (i = LCD_HEIGHT - lines; i < LCD_HEIGHT; i++) {
+		lcd_graphics_move (0, i);
+
+		for (j=0; j < LCD_WIDTH/8; j++) {
+			lcd_write_command(LCD_CMD_WRITE_DATA, 0);
+		}
+	}
 }
 
+#ifndef LC7981_DRIVER_ONLY
 int main(void) {
+
 	lcd_graphics_init();
 	lcd_graphics_clear();
 	g_draw_rectangle(6, 5, 100, 30);
 	g_draw_rectangle(8, 7, 100, 30);
 	g_draw_rectangle(10, 9, 100, 30);
 	g_draw_rectangle(12, 11, 100, 30);
-	g_draw_string(17, 15, "Graphics Demo!\nHello World!"); 
+	g_draw_string(17, 15, "Graphics Demo!\nHello World!");
 	draw_penguin();
+	lcd_graphics_draw_xbm(140, 10, uparrow_width, uparrow_height, uparrow_bits);
 	g_draw_string(22, 44, "!\"#$%&'=\n()*+,-./\n:;<>?@\[\n]^_`|{}");
 	while (1) ;
 	return 0;
-}
 
+}
+#endif

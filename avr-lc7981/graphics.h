@@ -19,5 +19,6 @@ void g_draw_vertical_line(unsigned short x, unsigned short y, unsigned short len
 void g_draw_rectangle(unsigned short x, unsigned short y, unsigned short width, unsigned short height);
 void g_draw_char(unsigned short x, unsigned short y, char character);
 void g_draw_string(unsigned short x, unsigned short y, const char *str);
+void g_draw_xbm(unsigned short x, unsigned short y, unsigned short size_x, unsigned short size_y, const unsigned char *bits);
 
 #endif

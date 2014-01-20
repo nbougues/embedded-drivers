@@ -23,3 +23,14 @@ Connections on the particular 160x80 LCD I used:
 
 March 30, 2007
 	- Initial release.
+
+Jan 21, 2014:
+
+Several enhancements :
+
+* Use LC7981 busy flag (was not using PIN for reading)
+* Make main() optional (in order to link the file with something else)
+* Enable reversed data wires (OK, I'm a software guy !) 
+* Add scrolling (and reading the screen, BTW)
+* Add XBM loading. XBM is basically a C file, so there is no conversion needed.
+* Configure flash storage for font and XBM, as RAM is scarce and it's not needed there
